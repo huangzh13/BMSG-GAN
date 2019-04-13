@@ -1,14 +1,22 @@
-""" Utility to generate multi-scale resolution grids from the trained models"""
+"""
+-------------------------------------------------
+   File Name:     generate_samples_grid.py
+   Author :       Zhonghao Huang
+   Date:          2019/4/13
+   Description :
+-------------------------------------------------
+"""
+
+""" Generate single image samples from a particular depth of a model """
 
 import argparse
 import torch as th
 import os
 from torch.backends import cudnn
 from MSG_GAN.GAN import Generator
-from torchvision.utils import make_grid
 from torch.nn.functional import interpolate
-from math import sqrt, ceil
 from scipy.misc import imsave
+from torchvision.utils import save_image
 from tqdm import tqdm
 
 # turn on the fast GPU processing mode on
@@ -38,17 +46,16 @@ def parse_arguments():
                         help="latent size for the generator")
 
     parser.add_argument("--depth", action="store", type=int,
+                        default=9,
+                        help="depth of the network. **Starts from 1")
+
+    parser.add_argument("--out_depth", action="store", type=int,
                         default=6,
-                        help="latent size for the generator")
+                        help="output depth of images. **Starts from 0")
 
     parser.add_argument("--num_samples", action="store", type=int,
                         default=300,
                         help="number of synchronized grids to be generated")
-
-    parser.add_argument("--num_columns", action="store", type=int,
-                        default=None,
-                        help="Number of columns " +
-                             "required in the generated sample sheets")
 
     parser.add_argument("--out_dir", action="store", type=str,
                         default="interp_animation_frames/",
@@ -87,7 +94,7 @@ def main(args):
     gen = th.nn.DataParallel(Generator(
         depth=args.depth,
         latent_size=args.latent_size
-    ).to(device))
+    )).to(device)
 
     print("Loading the generator weights from:", args.generator_file)
     # load the weights into it
@@ -99,35 +106,23 @@ def main(args):
     save_path = args.out_dir
 
     print("Generating scale synchronized images ...")
-    for img_num in tqdm(range(1, args.num_samples + 1)):
-        # generate the images:
-        with th.no_grad():
-            points = th.randn(1, args.latent_size).to(device)
-            points = (points / points.norm()) * sqrt(args.latent_size)
-            ss_images = gen(points)
 
-        # resize the images:
-        ss_images = progressive_upscaling(ss_images)
+    # generate the images:
+    with th.no_grad():
+        point = th.randn(63, args.latent_size).to(device)
+        point = (point / point.norm()) * (args.latent_size ** 0.5)
+        ss_images = gen(point)
 
-        # reverse the ss_images
-        # ss_images = list(reversed(ss_images))
+    # resize the images:
+    ss_images = progressive_upscaling(ss_images)
+    ss_image = ss_images[args.out_depth]
 
-        # squeeze the batch dimension from each image
-        ss_images = list(map(lambda x: th.squeeze(x, dim=0), ss_images))
+    # save the ss_image in the directory
+    # save_image(os.path.join(save_path, "sample.png"),
+    #        ss_image.squeeze(0).permute(1, 2, 0).cpu())
 
-        # make a grid out of them
-        num_cols = int(ceil(sqrt(len(ss_images)))) if args.num_columns is None \
-            else args.num_columns
-        ss_image = make_grid(
-            ss_images,
-            nrow=num_cols,
-            normalize=True,
-            scale_each=True
-        )
-
-        # save the ss_image in the directory
-        imsave(os.path.join(save_path, str(img_num) + ".png"),
-               ss_image.permute(1, 2, 0).cpu())
+    save_image(ss_image, os.path.join(save_path, "sample.png"), nrow=7,
+               normalize=True, scale_each=True, padding=0)
 
     print("Generated %d images at %s" % (args.num_samples, save_path))
 

@@ -12,6 +12,8 @@ from tqdm import tqdm
 # turn on the fast GPU processing mode on
 cudnn.benchmark = True
 
+# define the device for the training script
+device = th.device("cuda" if th.cuda.is_available() else "cpu")
 
 # set the manual seed
 # th.manual_seed(3)
@@ -81,7 +83,7 @@ def main(args):
     gen = th.nn.DataParallel(Generator(
         depth=args.depth,
         latent_size=args.latent_size
-    ))
+    )).to(device)
 
     print("Loading the generator weights from:", args.generator_file)
     # load the weights into it
@@ -96,7 +98,7 @@ def main(args):
     for img_num in tqdm(range(1, args.num_samples + 1)):
         # generate the images:
         with th.no_grad():
-            point = th.randn(1, args.latent_size)
+            point = th.randn(1, args.latent_size).to(device)
             point = (point / point.norm()) * (args.latent_size ** 0.5)
             ss_images = gen(point)
 
